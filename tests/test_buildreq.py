@@ -152,6 +152,27 @@ class TestBuildreq(unittest.TestCase):
                               'intltool',
                               'sed']))
 
+    def test_parse_go_sum(self):
+        """
+        Test parse_go_sum
+        """
+        open_name = 'buildreq.open'
+        content = """github.com/example/foo v1.0.0 h1:dXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ=
+github.com/example/foo v1.0.0/go.mod h1:xjWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+github.com/example/bar v1.2.0 h1:x8tu5sraLXCXIcARxBp/8cbvlwVa7Z1NHg9XEKhtSuM=
+github.com/example/bar v1.2.0/go.mod h1:axqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
+"""
+        m_open = mock_open(read_data=content)
+        with patch(open_name, m_open, create=True):
+            result = buildreq.parse_go_sum('filename')
+        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result[0]), 2)
+        self.assertEqual(result[0][0], "github.com/example/foo")
+        self.assertEqual(result[0][1], "v1.0.0")
+        self.assertEqual(len(result[1]), 2)
+        self.assertEqual(result[1][0], "github.com/example/bar")
+        self.assertEqual(result[1][1], "v1.2.0")
+
     def test_parse_cargo_toml(self):
         """
         Test parse_cargo_toml

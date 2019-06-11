@@ -184,6 +184,28 @@ def is_version(num_str):
     return False
 
 
+def parse_go_sum(path):
+    """Parse go.sum file for build requirements.
+
+    File content looks as follows:
+    github.com/example/foo v1.0.0 h1:dXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ=
+    github.com/example/foo v1.0.0/go.mod h1:xjWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+    github.com/example/bar v1.2.0 h1:x8tu5sraLXCXIcARxBp/8cbvlwVa7Z1NHg9XEKhtSuM=
+    github.com/example/bar v1.2.0/go.mod h1:axqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
+
+    Don't need to handle the hash for purposes of parsing build requirements. Also the
+    go.mod hash line is not important so skip it.
+    """
+    reqs = []
+    with open(path, "r") as gfile:
+        for line in gfile.readlines():
+            url, tag, _ = line.split()
+            if "go.mod" in tag:
+                continue
+            reqs.append((url, tag))
+    return reqs
+
+
 def parse_modules_list(modules_string, is_cmake=False):
     """Parse the modules_string for the list of modules, stripping out the version requirements."""
     if is_cmake:
@@ -665,8 +687,16 @@ def scan_for_configure(dirn):
         if any(f.endswith(".go") for f in files):
             add_buildreq("buildreq-golang")
             buildpattern.set_build_pattern("golang", default_score)
-            if "go.mod" in files:
-                config.set_gopath = False
+        if "go.mod" in files:
+            add_buildreq("buildreq-golang")
+            config.set_gopath = False
+            if "go.sum" in files and dirpath == dirn:
+                sum_path = os.path.join(dirpath, "go.sum")
+                reqs = parse_go_sum(sum_path)
+                for req in reqs:
+                    # req[0] is a SCM url segment in the form, repo/XXX/package-name
+                    pkg = "go-" + req[0].split("/")[-1]
+                    add_buildreq(pkg)
 
         if "CMakeLists.txt" in files and "configure.ac" not in files:
             add_buildreq("buildreq-cmake")

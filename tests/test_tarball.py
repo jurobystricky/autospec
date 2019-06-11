@@ -133,6 +133,27 @@ class TestTarballVersionName(unittest.TestCase):
         self.assertEqual(tarball.build_unzip('zip/path'),
                          ('unzip -qq -d . zip/path', 'prefix-dir'))
 
+    def test_build_go_unzip(self):
+        """
+        Test build_go_unzip
+        """
+        build_unzip_backup = tarball.build_unzip
+        tarball.build_unzip = lambda x: (f"unzip {x}", "/foo")
+        open_name = 'tarball.open'
+        content = "v1.0.0\n"
+        go_sources = ["v1.0.0.info", "v1.0.0.mod", "v1.0.0.zip"]
+        m_open = mock_open(read_data=content)
+        tarball.buildpattern.sources["godep"] = []
+        with patch(open_name, m_open, create=True):
+            cmd, prefix = tarball.build_go_unzip("/foo/bar")
+        tarball.build_unzip = build_unzip_backup
+        self.assertEqual(len(cmd), 1)
+        self.assertEqual(cmd[0], "unzip /foo/v1.0.0.zip")
+        self.assertEqual(prefix, "/foo")
+        self.assertEqual(tarball.buildpattern.sources["godep"], go_sources)
+        tarball.buildpattern.sources["godep"] = []
+        m_open.assert_called_once_with("/foo/bar", "r")
+
     def test_build_un7z(self):
         """
         Test build_un7z

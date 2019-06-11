@@ -43,6 +43,32 @@ archives = []
 giturl = ""
 
 
+def get_go_artifacts(url, target, version):
+    """Get artifacts required to be a go proxy alternative."""
+    download.do_curl(os.path.join(url, f"{version}.info"),
+                     dest=os.path.join(target, f"{version}.info"),
+                     is_fatal=True)
+    download.do_curl(os.path.join(url, f"{version}.mod"),
+                     dest=os.path.join(target, f"{version}.mod"),
+                     is_fatal=True)
+    download.do_curl(os.path.join(url, f"{version}.zip"),
+                     dest=os.path.join(target, f"{version}.zip"),
+                     is_fatal=True)
+
+
+def process_go_dependency(url, target):
+    """Handle go dependiency files."""
+    download.do_curl(url,
+                     dest=os.path.join(target, "list"),
+                     is_fatal=True)
+    versions = []
+    with open(os.path.join(target, "list"), "r") as lfile:
+        versions = lfile.readlines()
+    base_url = os.path.dirname(url)
+    for version in versions:
+        get_go_artifacts(base_url, target, version.strip())
+
+
 def get_contents(filename):
     """Get contents of filename (tar file)."""
     with open(filename, "rb") as f:
@@ -61,7 +87,11 @@ def check_or_get_file(upstream_url, tarfile):
     """Download tarball from url unless it is present locally."""
     tarball_path = build.download_path + "/" + tarfile
     if not os.path.isfile(tarball_path):
-        download.do_curl(upstream_url, dest=tarball_path, is_fatal=True)
+        # check if url signifies a go dependency, which needs special handling
+        if upstream_url.endswith("list"):
+            process_go_dependency(upstream_url, build.download_path)
+        else:
+            download.do_curl(upstream_url, dest=tarball_path, is_fatal=True)
     return tarball_path
 
 
@@ -211,6 +241,26 @@ def build_gem_unpack(tarball_path):
     return extract_cmd, tar_prefix
 
 
+def build_go_unzip(tarball_path):
+    """Create go unzip command(s)."""
+    base_path = os.path.dirname(tarball_path)
+    versions = []
+    full_extract = []
+    base_url = os.path.dirname(url)
+    with open(tarball_path, "r") as vfile:
+        versions = vfile.readlines()
+    for version in versions:
+        vstrip = version.strip()
+        source_info = os.path.join(base_url, f"{vstrip}.info")
+        source_mod = os.path.join(base_url, f"{vstrip}.mod")
+        source_zip = os.path.join(base_url, f"{vstrip}.zip")
+        extract_cmd, prefix = build_unzip(os.path.join(base_path, f"{vstrip}.zip"))
+        buildpattern.sources["godep"] += [source_info, source_mod, source_zip]
+        full_extract.append(extract_cmd)
+
+    return full_extract, prefix
+
+
 def print_header():
     """Print header for autospec run."""
     print("\n")
@@ -313,6 +363,10 @@ def detect_build_from_url(url):
     # rust crate
     if "crates.io" in url:
         buildpattern.set_build_pattern("cargo", 10)
+
+    # go dependency
+    if "proxy.golang.org" in url:
+        buildpattern.set_build_pattern("godep", 10)
 
 
 def name_and_version(name_arg, version_arg, filemanager):
@@ -508,6 +562,8 @@ def find_extract(tar_path, tarfile):
         extract_cmd, tar_prefix = build_gem_unpack(tar_path)
     elif tarfile.lower().endswith('.jar'):
         extract_cmd, tar_prefix = build_unzip(tar_path)
+    elif tarfile == "list":
+        extract_cmd, tar_prefix = build_go_unzip(tar_path)
     else:
         extract_cmd, tar_prefix = build_untar(tar_path)
 
@@ -520,7 +576,11 @@ def prepare_and_extract(extract_cmd):
     shutil.rmtree(os.path.join(build.base_path, tarball_prefix), ignore_errors=True)
     os.makedirs("{}".format(build.base_path), exist_ok=True)
     call("mkdir -p %s" % build.download_path)
-    call(extract_cmd)
+    if isinstance(extract_cmd, list):
+        for cmd in extract_cmd:
+            call(cmd)
+    else:
+        call(extract_cmd)
 
 
 def process_archives(archives):
